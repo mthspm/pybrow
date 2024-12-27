@@ -1,32 +1,43 @@
 import socket
 import ssl
 import os
+import base64
 
 class URL:
-    def __init__(self, url):
-        self.scheme, url = url.split("://", 1)
-        assert self.scheme in ["http", "https", "file"]
-        if self.scheme == "file":
-            self.path = url
-            self.host = None
-            self.port = None
+    def __init__(self, url: str) -> None:
+        if url.startswith("data:"):
+            self.scheme = "data"
+            self.data = url
         else:
-            if "/" not in url:
-                url = url + "/"
-            self.host, url = url.split("/", 1)
-            self.path = "/" + url
-            if self.scheme == "http":
-                self.port = 80
-            elif self.scheme == "https":
-                self.port = 443
-            if ":" in self.host:
-                self.host, port = self.host.split(":", 1)
-                self.port = int(port)
+            self.scheme, url = url.split("://", 1)
+            assert self.scheme in ["http", "https", "file", "data"]
+            if self.scheme == "file":
+                self.path = url
+            else:
+                if "/" not in url:
+                    url = url + "/"
+                self.host, url = url.split("/", 1)
+                self.path = "/" + url
+                if self.scheme == "http":
+                    self.port = 80
+                elif self.scheme == "https":
+                    self.port = 443
+                if ":" in self.host:
+                    self.host, port = self.host.split(":", 1)
+                    self.port = int(port)
         
     def request(self):
         if self.scheme == "file":
             with open(self.path, "r", encoding="utf8") as f:
                 return f.read()
+        elif self.scheme == "data":
+            if "," not in self.data:
+                raise ValueError("data: URL must contain a comma")
+            metadata, data = self.data.split(",", 1)
+            if metadata.endswith(";base64"):
+                return base64.b64decode(data).decode("utf8")
+            else:
+                return data
         
         s = socket.socket(
             family=socket.AF_INET,
@@ -69,7 +80,8 @@ class URL:
         s.close()
         return content
     
-def show(body):
+def show(body) -> None:
+    body = body.replace("&lt;", "<").replace("&gt;", ">")
     in_tag = False
     for c in body:
         if c == "<":
@@ -80,16 +92,19 @@ def show(body):
             print(c, end="")
             
 
-def load(url):
+def load(url: URL) -> None:
     body = url.request()
     show(body)
   
 if __name__ == "__main__":
     import sys
     
-    TEST_FILE = os.path.join(os.path.dirname(__file__), "..", "assets", "example.html")
+    ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
+    TEST_DEFAULT = os.path.join(ASSETS_DIR, "example.html")
+    TEST_ENTITIES = os.path.join(ASSETS_DIR, "entities.html")
     
     if len(sys.argv) > 1:
-        load(URL(sys.argv[1]))
+        full_url = " ".join(sys.argv[1:])
+        load(URL(full_url))
     else:
-        load(URL(f"file://{TEST_FILE}"))
+        load(URL(f"file://{TEST_ENTITIES}"))
