@@ -28,8 +28,16 @@ class URL:
             ctx = ssl.create_default_context()
             s = ctx.wrap_socket(s, server_hostname=self.host)
         
+        # See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers to find more examples
+        headers = {
+            "Host": self.host,
+            "Connection": "close",
+            "User-Agent": "pybrow/1.0"
+        }
+        
         request = "GET {} HTTP/1.0\r\n".format(self.path)
-        request += "Host: {}\r\n".format(self.host)
+        for k, v in headers.items():
+            request += "{}: {}\r\n".format(k, v)
         request += "\r\n"
         s.send(request.encode("utf8"))
         
