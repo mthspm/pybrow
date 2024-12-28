@@ -2,57 +2,65 @@ import socket
 import ssl
 import os
 import base64
+from enum import Enum
+
+# https://www.site.com:443/path/to/file.html
+
+SCHEMES = ["http", "https", "file", "data", "view-source"]
 
 class URL:
     def __init__(self, url: str) -> None:
-        if url.startswith("data:"):
-            self.scheme = "data"
+        self.scheme, url = url.split("://", 1)
+        assert self.scheme in SCHEMES
+        self.socket = None
+        if self.scheme == "view-source":
+            self.inner_url = URL(url)
+        elif self.scheme == "data":
             self.data = url
-        else:
-            self.scheme, url = url.split("://", 1)
-            assert self.scheme in ["http", "https", "file", "data"]
-            if self.scheme == "file":
-                self.path = url
-            else:
-                if "/" not in url:
-                    url = url + "/"
-                self.host, url = url.split("/", 1)
-                self.path = "/" + url
-                if self.scheme == "http":
-                    self.port = 80
-                elif self.scheme == "https":
-                    self.port = 443
-                if ":" in self.host:
-                    self.host, port = self.host.split(":", 1)
-                    self.port = int(port)
-        
+        elif self.scheme == "file":
+            self.path = url
+        elif self.scheme in ["http", "https"]:
+            if "/" not in url:
+                url = url + "/"
+            self.host, url = url.split("/", 1)
+            self.path = "/" + url
+            if self.scheme == "http":
+                self.port = 80
+            elif self.scheme == "https":
+                self.port = 443
+            if ":" in self.host:
+                self.host, port = self.host.split(":", 1)
+                self.port = int(port)
+    
     def request(self):
+        if self.scheme == "view-source":
+            return self.inner_url.request()
         if self.scheme == "file":
             with open(self.path, "r", encoding="utf8") as f:
                 return f.read()
-        elif self.scheme == "data":
-            if "," not in self.data:
-                raise ValueError("data: URL must contain a comma")
+        if self.scheme == "data":
+            assert "," in self.data
             metadata, data = self.data.split(",", 1)
-            if metadata.endswith(";base64"):
+            if metadata.endswith("base64"):
                 return base64.b64decode(data).decode("utf8")
-            else:
-                return data
+            elif metadata.endswith("text/colored"):
+                return "\033[31m" + data + "\033[0m"
+            return data
         
-        s = socket.socket(
-            family=socket.AF_INET,
-            type=socket.SOCK_STREAM,
-            proto=socket.IPPROTO_TCP
-        )
-        s.connect((self.host, self.port))
-        if self.scheme == "https":
-            ctx = ssl.create_default_context()
-            s = ctx.wrap_socket(s, server_hostname=self.host)
+        if self.socket is None:
+            self.socket = socket.socket(
+                family=socket.AF_INET,
+                type=socket.SOCK_STREAM,
+                proto=socket.IPPROTO_TCP
+            )
+            self.socket.connect((self.host, self.port))
+            if self.scheme == "https":
+                ctx = ssl.create_default_context()
+                self.socket = ctx.wrap_socket(self.socket, server_hostname=self.host)
         
         # See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers to find more examples
         headers = {
             "Host": self.host,
-            "Connection": "close",
             "User-Agent": "pybrow/1.0"
         }
         
@@ -60,9 +68,9 @@ class URL:
         for k, v in headers.items():
             request += "{}: {}\r\n".format(k, v)
         request += "\r\n"
-        s.send(request.encode("utf8"))
+        self.socket.send(request.encode("utf8"))
         
-        response = s.makefile("r", encoding="utf8", newline="\r\n")
+        response = self.socket.makefile("r", encoding="utf8", newline="\r\n")
         
         statusline = response.readline()
         version, status, explanation = statusline.split(" ", 2)
@@ -76,11 +84,15 @@ class URL:
         assert "transfer-encoding" not in response_headers
         assert "content-enconding" not in response_headers
         
-        content = response.read()
-        s.close()
+        content_length = int(response_headers.get("content-length", 0))
+        content = response.read(content_length)
         return content
     
-def show(body) -> None:
+def show(body, raw=False) -> None:
+    if raw:
+        print(body)
+        return
+    
     body = body.replace("&lt;", "<").replace("&gt;", ">")
     in_tag = False
     for c in body:
@@ -90,11 +102,13 @@ def show(body) -> None:
             in_tag = False
         elif not in_tag:
             print(c, end="")
-            
 
 def load(url: URL) -> None:
     body = url.request()
-    show(body)
+    if url.scheme == "view-source":
+        show(body, raw=True)
+    else:
+        show(body)
   
 if __name__ == "__main__":
     import sys
