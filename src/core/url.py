@@ -2,11 +2,40 @@ import socket
 import ssl
 import os
 import base64
+import time
+from datetime import datetime, timedelta
 from enum import Enum
 
 # https://www.site.com:443/path/to/file.html
 
-SCHEMES = ["http", "https", "file", "data", "view-source"]
+SCHEMES = ("http", "https", "file", "data", "view-source")
+
+
+class CacheEntry:
+    def __init__(self, response, expiry):
+        self.response = response
+        self.expiry = expiry
+        
+
+class Cache:
+    def __init__(self):
+        self.cache = {}
+        
+    def get(self, url):
+        entry = self.cache.get(url)
+        if entry is None:
+            return None
+        if entry.expiry < datetime.now():
+            del self.cache[url]
+            return None
+        return entry.response
+    
+    def set(self, url, response, max_age):
+        expiry = datetime.now() + timedelta(seconds=max_age)
+        self.cache[url] = CacheEntry(response, expiry)
+
+
+cache = Cache()
 
 class URL:
     def __init__(self, url: str) -> None:
@@ -32,7 +61,7 @@ class URL:
                 self.host, port = self.host.split(":", 1)
                 self.port = int(port)
     
-    def request(self):
+    def request(self, max_redirects=5):
         if self.scheme == "view-source":
             return self.inner_url.request()
         if self.scheme == "file":
@@ -46,6 +75,12 @@ class URL:
             elif metadata.endswith("text/colored"):
                 return "\033[31m" + data + "\033[0m"
             return data
+        
+        url = f"{self.scheme}://{self.host}{self.path}"
+        cached_response = cache.get(url)
+        if cached_response:
+            print("Using cached response")
+            return cached_response
         
         if self.socket is None:
             self.socket = socket.socket(
@@ -81,11 +116,25 @@ class URL:
             header, value = line.split(":", 1)
             response_headers[header.casefold()] = value.strip()
         
+        if 300 <= int(status) < 400:
+            if max_redirects == 0:
+                raise Exception("Too many redirects")
+            location: str = response_headers.get("location")
+            assert location, "Redirect status without location"
+            if location.startswith("/"):
+                location = f"{self.scheme}://{self.host}{location}"
+            elif not location.startswith("http"):
+                location = f"{self.scheme}://{location}"
+            return URL(location).request(max_redirects - 1)
+        
         assert "transfer-encoding" not in response_headers
         assert "content-enconding" not in response_headers
         
         content_length = int(response_headers.get("content-length", 0))
         content = response.read(content_length)
+        
+        cache.set(url, content, max_age=3600)
+                
         return content
     
 def show(body, raw=False) -> None:
