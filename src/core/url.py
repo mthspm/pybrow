@@ -2,6 +2,7 @@ import socket
 import ssl
 import os
 import base64
+import gzip
 import time
 from datetime import datetime, timedelta
 from enum import Enum
@@ -58,7 +59,18 @@ class HTTPURL(URL):
         if ":" in self.host:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
-            
+    
+    def handle_redirect(self, response_headers: dict, max_redirects: int):
+        if max_redirects == 0:
+            raise Exception("Too many redirects")
+        location = response_headers.get("location")
+        assert location, "Redirect status without location"
+        if location.startswith("/"):
+            location = f"{self.scheme}://{self.host}{location}"
+        elif not location.startswith("http"):
+            location = f"{self.scheme}://{location}"
+        return URLFactory.create(location).request(max_redirects - 1)
+    
     def request(self, max_redirects=5):
         url = f"{self.scheme}://{self.host}{self.path}"
         cached_response = cache.get(url)
@@ -70,7 +82,7 @@ class HTTPURL(URL):
             self.socket = socket.socket(
                 family=socket.AF_INET,
                 type=socket.SOCK_STREAM,
-                proto=socket.IPPROTO_TCP
+                # proto=socket.IPPROTO_TCP
             )
             self.socket.connect((self.host, self.port))
             if self.scheme == "https":
@@ -80,7 +92,8 @@ class HTTPURL(URL):
         # See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers to find more examples
         headers = {
             "Host": self.host,
-            "User-Agent": "pybrow/1.0"
+            "User-Agent": "pybrow/1.0",
+            "Accept-Encoding": "gzip",
         }
         
         request = "GET {} HTTP/1.0\r\n".format(self.path)
@@ -89,32 +102,27 @@ class HTTPURL(URL):
         request += "\r\n"
         self.socket.send(request.encode("utf8"))
         
-        response = self.socket.makefile("r", encoding="utf8", newline="\r\n")
-        statusline = response.readline()
+        response = self.socket.makefile("rb", newline="\r\n")
+        statusline = response.readline().decode("utf8")
         version, status, explanation = statusline.split(" ", 2)
         response_headers = {}
         while True:
-            line = response.readline()
+            line = response.readline().decode("utf8")
             if line == "\r\n": break
             header, value = line.split(":", 1)
             response_headers[header.casefold()] = value.strip()
             
         if 300 <= int(status) < 400:
-            if max_redirects == 0:
-                raise Exception("Too many redirects")
-            location: str = response_headers.get("location")
-            assert location, "Redirect status without location"
-            if location.startswith("/"):
-                location = f"{self.scheme}://{self.host}{location}"
-            elif not location.startswith("http"):
-                location = f"{self.scheme}://{location}"
-            return URLFactory.create(location).request(max_redirects - 1)
+            return self.handle_redirect(response_headers, max_redirects)
         
         assert "transfer-encoding" not in response_headers
         assert "content-enconding" not in response_headers
         
         content_length = int(response_headers.get("content-length", 0))
         content = response.read(content_length)
+        
+        if response_headers.get("content-encoding") == "gzip":
+            content = gzip.decompress(content)
         
         cache.set(url, content, max_age=3600)
         return content
@@ -165,7 +173,7 @@ class URLFactory:
             return DataURL(url)
         if scheme == "view-source":
             return ViewSourceURL(url)
-        raise ValueError("Unknown scheme")
+        raise ValueError("Unknown scheme", scheme)
     
     
 def show(body, raw=False) -> None:
@@ -185,6 +193,8 @@ def show(body, raw=False) -> None:
 
 def load(url: URL) -> None:
     body = url.request()
+    if isinstance(body, bytes):
+        body = body.decode("utf8", errors="replace")
     if url.scheme == "view-source":
         show(body, raw=True)
     else:
