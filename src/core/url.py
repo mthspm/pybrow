@@ -176,10 +176,10 @@ class URLFactory:
         raise ValueError("Unknown scheme", scheme)
     
     
-def show(body, raw=False) -> None:
+def lex(body, raw=False) -> str:
+    text = ""
     if raw:
-        print(body)
-        return
+        return body
     
     body = body.replace("&lt;", "<").replace("&gt;", ">")
     in_tag = False
@@ -189,16 +189,17 @@ def show(body, raw=False) -> None:
         elif c == ">":
             in_tag = False
         elif not in_tag:
-            print(c, end="")
+            text += c
+    return text
 
 def load(url: URL) -> None:
     body = url.request()
     if isinstance(body, bytes):
         body = body.decode("utf8", errors="replace")
     if url.scheme == "view-source":
-        show(body, raw=True)
+        print(lex(body, raw=True))
     else:
-        show(body)
+        print(lex(body))
   
 if __name__ == "__main__":
     import sys
