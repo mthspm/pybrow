@@ -5,7 +5,7 @@ import tkinter as tk
 import platform
 from logging import warning
 from pathlib import Path
-from ..core.url import lex, URLFactory
+from ..core.url import URL, lex, URLFactory
 
 width, height = 800, 600
 HSTEP, VSTEP = 13, 18
@@ -58,10 +58,18 @@ class Browser:
             fill="blue"
         )
       
-    def load(self, url):
-        body = url.request()
+    def load(self, url: str):
+        try:
+            url = URLFactory.create(url)
+            body = url.request()
+        except Exception as e:
+            warning(f"Failed to load {url}: {e}")
+            url = URLFactory.create("about://blank")
+            body = url.request()
+
         if isinstance(body, bytes):
             body = body.decode("utf8", errors="replace")
+            
         if url.scheme == "view-source":
             text = lex(body, raw=True)
         else:
@@ -149,7 +157,13 @@ def layout(text):
 
 if __name__ == "__main__":
     import sys
-    url = URLFactory.create(sys.argv[1])
-    Browser().load(url)
+    browser = Browser()
+    if len(sys.argv) > 1:
+        full_url = " ".join(sys.argv[1:])
+        browser.load(full_url)
+    else:
+        test_file = ASSETS_DIR / "default.html"
+        test_file2 = ASSETS_DIR / "entities.html"
+        browser.load(f"file:///{test_file2}")
     tk.mainloop()
     
