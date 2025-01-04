@@ -30,6 +30,27 @@ class Browser:
             if y > self.scroll + height: continue
             if y + VSTEP < self.scroll: continue
             self.canvas.create_text(x, y - self.scroll, text=c)
+        self.draw_scrollbar()
+        
+    def draw_scrollbar(self):
+        doc_height = len(self.display_list)
+        if doc_height <= height: return
+        
+        bar_height = max(100, height * height / doc_height)
+        max_scroll = doc_height - height
+        scroll_ratio = self.scroll / max_scroll
+        bar_y = scroll_ratio * (height - bar_height)
+        
+        self.canvas.create_rectangle(
+            width - 20, 0,
+            width - 10, height,
+            fill="lightgrey"
+        ) 
+        self.canvas.create_rectangle(
+            width - 20, bar_y,
+            width - 10, bar_y + bar_height,
+            fill="blue"
+        )
       
     def load(self, url):
         body = url.request()
@@ -43,7 +64,6 @@ class Browser:
         self.draw()
     
     # === BINDS SETUP ===    
-        
     def windows_bindings(self):
         self.window.bind("<MouseWheel>", self.wheelscroll)
     
