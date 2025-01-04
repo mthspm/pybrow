@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
 import tkinter as tk
 import platform
 from logging import warning
+from pathlib import Path
 from ..core.url import lex, URLFactory
 
 width, height = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 OS = platform.system()
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
 class Browser:
     def __init__(self):
@@ -21,15 +24,18 @@ class Browser:
             height=height,
         )
         self.canvas.pack(fill=tk.BOTH, expand=tk.YES)
+        self.emoji_images = self.load_emoji_images()
         self.setup_binds()
-    
     
     def draw(self):
         self.canvas.delete("all")
         for x, y, c in self.display_list:
             if y > self.scroll + height: continue
             if y + VSTEP < self.scroll: continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            if c in self.emoji_images:
+                self.canvas.create_image(x, y - self.scroll, image=self.emoji_images[c], anchor="nw")
+            else:
+                self.canvas.create_text(x, y - self.scroll, text=c)
         self.draw_scrollbar()
         
     def draw_scrollbar(self):
@@ -62,6 +68,16 @@ class Browser:
             text = lex(body)
         self.display_list = layout(text)
         self.draw()
+    
+    def load_emoji_images(self):
+        emoji_dir = ASSETS_DIR / "emojis"
+        files = [f for f in os.listdir(emoji_dir) if f.endswith("_color.png")]
+        images = {}
+        for emoji_file in files:
+            emoji_code = os.path.splitext(emoji_file)[0].split('_')[0]
+            path = os.path.join(emoji_dir, emoji_file)
+            images[emoji_code] = tk.PhotoImage(file=path)
+        return images
     
     # === BINDS SETUP ===    
     def windows_bindings(self):
