@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import socket
 import ssl
 import os
@@ -192,7 +194,7 @@ def lex(body, raw=False) -> str:
             text += c
     return text
 
-def load(url: URL) -> None:
+def _load(url: URL) -> None:
     body = url.request()
     if isinstance(body, bytes):
         body = body.decode("utf8", errors="replace")
@@ -210,6 +212,6 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1:
         full_url = " ".join(sys.argv[1:])
-        load(URLFactory.create(full_url))
+        _load(URLFactory.create(full_url))
     else:
-        load(URLFactory.create(f"file://{TEST_ENTITIES}"))
+        _load(URLFactory.create(f"file://{TEST_ENTITIES}"))
