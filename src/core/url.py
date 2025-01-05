@@ -10,8 +10,6 @@ import re
 from datetime import datetime, timedelta
 from enum import Enum
 
-# https://www.site.com:443/path/to/file.html
-
 SCHEMES = (
     "http", "https", "file", "data", "view-source", "about"
 )
@@ -157,7 +155,7 @@ class DataURL(URL):
             return "\033[31m" + self.data + "\033[0m"
         return self.data
 
-
+ 
 class ViewSourceURL(URL):
     def __init__(self, scheme: str, url: str) -> None:
         super().__init__(scheme, url)
@@ -181,8 +179,8 @@ class URLFactory:
         match = URL_REGEX.match(url)
         assert match, f"Invalid URL format: {url}"
         scheme = match.group("scheme")
-        assert scheme in SCHEMES, f"Unknown scheme: {scheme}"
         url = match.group("url")
+        assert scheme in SCHEMES, f"Unknown scheme: {scheme}"
         
         print(f"Creating URL object for scheme={scheme} url={url}")
         if scheme == "http" or scheme == "https": # http://www.google.com

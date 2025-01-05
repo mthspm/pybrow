@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tkinter as tk
 import platform
+import argparse
 from logging import warning
 from pathlib import Path
 from ..core.url import URL, lex, URLFactory
@@ -12,11 +13,14 @@ HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 OS = platform.system()
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
+test_file = ASSETS_DIR / "default.html"
+test_file2 = ASSETS_DIR / "entities.html"
 
 class Browser:
-    def __init__(self):
+    def __init__(self, direction="ltr"):
         self.display_list = []
         self.scroll = 0
+        self.direction = direction
         self.window = tk.Tk()
         self.canvas = tk.Canvas(
             self.window,
@@ -74,7 +78,7 @@ class Browser:
             text = lex(body, raw=True)
         else:
             text = lex(body)
-        self.display_list = layout(text)
+        self.display_list = layout(text, self.direction)
         self.draw()
     
     def load_emoji_images(self):
@@ -140,27 +144,65 @@ class Browser:
             self.scroll = 0
         self.draw()
 
-def layout(text):
+def layout(text, direction="ltr"):
     display_list = []
     cursor_x, cursor_y = HSTEP, VSTEP
+    if direction == "rtl":
+        cursor_x = width - HSTEP
     for c in text:
-        if c == "\n": # Paragraph break
+        if c == "\n":  # Paragraph break
             cursor_y += VSTEP * 2
-            cursor_x = HSTEP
-        else: # Normal character
+            cursor_x = HSTEP if direction != "rtl" else width - HSTEP
+        else:  # Normal character
             display_list.append((cursor_x, cursor_y, c))
-            cursor_x += HSTEP
-            if cursor_x > width - HSTEP:
+            if direction == "ltr":
+                cursor_x += HSTEP
+                if cursor_x > width - HSTEP:
+                    cursor_y += VSTEP
+                    cursor_x = HSTEP
+            elif direction == "rtl":
+                cursor_x -= HSTEP
+                if cursor_x < HSTEP:
+                    cursor_y += VSTEP
+                    cursor_x = width - HSTEP
+            elif direction == "ttb":
                 cursor_y += VSTEP
-                cursor_x = HSTEP
+                if cursor_y > height - VSTEP:
+                    cursor_x += HSTEP
+                    cursor_y = VSTEP
     return display_list
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="pybrow",
+        description="A simple web browser inspired on the book Web Browser Engineering.",
+        epilog="Maded by @mthspm",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "url",
+        nargs="?",
+        default=None,
+        help="URL to load (e.g., http://example.com or file:///path/to/file.html)"
+    )
+    parser.add_argument(
+        "--direction", "-d",
+        choices=["ltr", "rtl", "ttb"],
+        default="ltr",
+        help="Text direction: ltr (left-to-right), rtl (right-to-left), ttb (top-to-bottom)"
+    )
+    parser.add_argument(
+        "--version", "-v",
+        action="version",
+        version="%(prog)s 1.0"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    import sys
-    browser = Browser()
-    if len(sys.argv) > 1:
-        full_url = " ".join(sys.argv[1:])
-        browser.load(full_url)
+    args = parse_args()
+    browser = Browser(direction=args.direction)
+    if args.url:
+        browser.load(args.url)
     else:
         test_file = ASSETS_DIR / "default.html"
         test_file2 = ASSETS_DIR / "entities.html"
